@@ -42,6 +42,19 @@ USE_MOCK_TAGGING = API_KEY is None
 
 client = anthropic.Anthropic(api_key=API_KEY) if not USE_MOCK_TAGGING else None
 
+# --- Simple persisted item list (a JSON file for now; swap for a real DB later) ---
+ITEMS_FILE = Path("storage/items.json")
+
+
+def load_items() -> list[dict]:
+    if not ITEMS_FILE.exists():
+        return []
+    return json.loads(ITEMS_FILE.read_text())
+
+
+def save_items(items: list[dict]) -> None:
+    ITEMS_FILE.write_text(json.dumps(items, indent=2))
+
 
 class ClosetItem(BaseModel):
     id: str
@@ -92,7 +105,7 @@ async def upload_item(photo: UploadFile = File(...)):
     else:
         tags = tag_clothing_item(cutout_bytes)
 
-    return ClosetItem(
+    new_item = ClosetItem(
         id=item_id,
         imageUrl=f"/storage/items/{filename}",
         category=tags["category"],
@@ -101,6 +114,17 @@ async def upload_item(photo: UploadFile = File(...)):
         formality=tags["formality"],
         season=tags["season"],
     )
+
+    items = load_items()
+    items.append(new_item.model_dump())
+    save_items(items)
+
+    return new_item
+
+
+@app.get("/items", response_model=list[ClosetItem])
+async def list_items():
+    return load_items()
 
 
 def mock_tag_clothing_item() -> dict:
